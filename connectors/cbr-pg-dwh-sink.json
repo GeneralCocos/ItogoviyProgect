@@ -1,0 +1,35 @@
+{
+  "connector.class": "io.confluent.connect.jdbc.JdbcSinkConnector",
+  "tasks.max": "1",
+
+  "topics": "rawpg.cbr.cbr_daily_rates_raw",
+
+  "connection.url": "jdbc:postgresql://postgres_dwh:5432/dwh_db",
+  "connection.user": "dwh_user",
+  "connection.password": "dwh_password",
+
+  "auto.create": "false",
+  "auto.evolve": "false",
+
+  "table.name.format": "cbr_dwh.cbr_daily_rates_stage",
+
+  "transforms": "unwrap",
+  "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+  "transforms.unwrap.drop.tombstones": "true",
+  "transforms.unwrap.delete.handling.mode": "none",
+
+  "insert.mode": "upsert",
+  "pk.mode": "record_key",
+  "pk.fields": "rate_date,char_code",
+
+  "delete.enabled": "false",
+
+  "batch.size": "500",
+  "max.retries": "10",
+  "retry.backoff.ms": "3000",
+
+  "key.converter": "io.confluent.connect.avro.AvroConverter",
+  "key.converter.schema.registry.url": "http://schema-registry:8081",
+  "value.converter": "io.confluent.connect.avro.AvroConverter",
+  "value.converter.schema.registry.url": "http://schema-registry:8081"
+}

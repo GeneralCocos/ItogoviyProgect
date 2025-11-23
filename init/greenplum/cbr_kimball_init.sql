@@ -1,7 +1,7 @@
 CREATE SCHEMA IF NOT EXISTS cbr_dwh;
 
 CREATE TABLE IF NOT EXISTS cbr_dwh.dim_date (
-    date_key     integer      NOT NULL,     -- формат YYYYMMDD
+    date_key     integer      NOT NULL,
     full_date    date         NOT NULL,
     year         integer      NOT NULL,
     month        integer      NOT NULL,

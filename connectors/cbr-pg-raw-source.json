@@ -1,0 +1,41 @@
+{
+  "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+  "tasks.max": "1",
+
+  "database.hostname": "postgres_raw",
+  "database.port": "5432",
+  "database.user": "raw_user",
+  "database.password": "raw_password",
+  "database.dbname": "raw_db",
+
+  "database.server.name": "rawpg",
+
+  "schema.include.list": "cbr",
+  "table.include.list": "cbr.cbr_daily_rates_raw",
+
+  "plugin.name": "pgoutput",
+  "slot.name": "cbr_raw_slot",
+  "slot.drop.on.stop": "false",
+
+  "publication.name": "cbr_raw_publication",
+  "publication.autocreate.mode": "filtered",
+
+  "time.precision.mode": "adaptive_time_microseconds",
+  "decimal.handling.mode": "double",
+
+  "tombstones.on.delete": "false",
+
+  "heartbeat.interval.ms": "0",
+
+  "snapshot.mode": "initial",
+  "snapshot.fetch.size": "1024",
+
+  "include.schema.changes": "false",
+
+  "topic.prefix": "rawpg",
+
+  "key.converter": "io.confluent.connect.avro.AvroConverter",
+  "key.converter.schema.registry.url": "http://schema-registry:8081",
+  "value.converter": "io.confluent.connect.avro.AvroConverter",
+  "value.converter.schema.registry.url": "http://schema-registry:8081"
+}
