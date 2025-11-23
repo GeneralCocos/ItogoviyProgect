@@ -1,0 +1,199 @@
+version: "3.9"
+
+services:
+  postgres_raw:
+    image: postgres:15
+    container_name: postgres_raw
+    environment:
+      POSTGRES_DB: raw_db
+      POSTGRES_USER: raw_user
+      POSTGRES_PASSWORD: raw_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - raw_pg_data:/var/lib/postgresql/data
+      - ./init/raw_postgres:/docker-entrypoint-initdb.d
+    networks:
+      - de-net
+
+
+  postgres_dwh:
+    image: postgres:15
+    container_name: postgres_dwh
+    environment:
+      POSTGRES_DB: dwh_db
+      POSTGRES_USER: dwh_user
+      POSTGRES_PASSWORD: dwh_password
+    ports:
+      - "5434:5432"
+    volumes:
+      - dwh_pg_data:/var/lib/postgresql/data
+      - ./init/dwh_postgres:/docker-entrypoint-initdb.d
+    networks:
+      - de-net
+
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+    networks:
+      - de-net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - de-net
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.1
+    container_name: schema-registry
+    depends_on:
+      - kafka
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:29092
+    networks:
+      - de-net
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.6.1
+    container_name: kafka-connect
+    depends_on:
+      - kafka
+      - schema-registry
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:29092
+      CONNECT_REST_PORT: 8083
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+      CONNECT_REST_ADVERTISED_PORT: 8083
+
+      CONNECT_GROUP_ID: "cbr-connect-cluster"
+      CONNECT_CONFIG_STORAGE_TOPIC: "cbr-connect-config"
+      CONNECT_OFFSET_STORAGE_TOPIC: "cbr-connect-offsets"
+      CONNECT_STATUS_STORAGE_TOPIC: "cbr-connect-status"
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+
+      CONNECT_KEY_CONVERTER: "io.confluent.connect.avro.AvroConverter"
+      CONNECT_VALUE_CONVERTER: "io.confluent.connect.avro.AvroConverter"
+      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+
+      CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+
+      CONNECT_PLUGIN_PATH: "/usr/share/java,/kafka-connect-plugins"
+    volumes:
+      - ./connectors:/kafka-connectors
+      - ./plugins:/kafka-connect-plugins
+    networks:
+      - de-net
+
+  greenplum:
+    image: pro100filipp/greenplum-with-pxf
+    container_name: greenplum
+    environment:
+      GP_DB: gpdb
+      GP_USER: gpadmin
+      GP_PASSWORD: gpadmin
+    ports:
+      - "5435:5432"
+    volumes:
+      - gp_data:/srv
+      - ./init/greenplum:/docker-entrypoint-initdb.d
+    networks:
+      - de-net
+
+  airflow-db:
+    image: postgres:15
+    container_name: airflow-db
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+    volumes:
+      - airflow_db_data:/var/lib/postgresql/data
+    networks:
+      - de-net
+
+  airflow-webserver:
+    image: apache/airflow:2.9.2
+    container_name: airflow-webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
+      AIRFLOW__CORE__FERNET_KEY: HqQy5Jzi10BGSAdoo6gWQBaIjXImQxGc1dQc5sKXc5s=
+      AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: "Europe/Moscow"
+      _AIRFLOW_WWW_USER_USERNAME: admin
+      _AIRFLOW_WWW_USER_PASSWORD: admin
+      AIRFLOW_UID: "50000"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    command: webserver
+    ports:
+      - "8080:8080"
+    networks:
+      - de-net
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.2
+    container_name: airflow-scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db/airflow
+      AIRFLOW__CORE__FERNET_KEY: HqQy5Jzi10BGSAdoo6gWQBaIjXImQxGc1dQc5sKXc5s=
+      AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE: "Europe/Moscow"
+      AIRFLOW_UID: "50000"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    command: scheduler
+    networks:
+      - de-net
+
+networks:
+  de-net:
+    driver: bridge
+
+volumes:
+  raw_pg_data:
+  dwh_pg_data:
+  airflow_db_data:
+  kafka_data:
+  zookeeper_data:
+  gp_data:
