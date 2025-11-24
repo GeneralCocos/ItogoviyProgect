@@ -36,6 +36,50 @@ services:
     networks:
       - de-net
 
+  trino:
+    image: trinodb/trino:443
+    container_name: trino
+    depends_on:
+      - greenplum
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./trino/etc/catalog:/etc/trino/catalog
+    environment:
+      TZ: Europe/Moscow
+    networks:
+      - de-net
+
+  superset:
+    build:
+      context: .
+      dockerfile: Dockerfile.superset
+    container_name: superset
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    depends_on:
+      - trino
+    environment:
+      SUPERSET_HOME: /app/superset_home
+      SUPERSET_SECRET_KEY: "change_me_please_123"
+      SUPERSET_LOAD_EXAMPLES: "no"
+      SUPERSET_ADMIN_USERNAME: "admin"
+      SUPERSET_ADMIN_FIRST_NAME: "Admin"
+      SUPERSET_ADMIN_LAST_NAME: "User"
+      SUPERSET_ADMIN_EMAIL: "admin@example.com"
+      SUPERSET_ADMIN_PASSWORD: "admin"
+    volumes:
+      - ./superset_home:/app/superset_home
+    command: >
+      /bin/bash -c "
+      superset db upgrade &&
+      superset init &&
+      superset run -p 8088 --host 0.0.0.0
+      "
+    networks:
+      - de-net
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
     container_name: zookeeper
