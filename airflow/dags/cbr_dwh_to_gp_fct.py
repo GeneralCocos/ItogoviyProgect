@@ -17,22 +17,18 @@ default_args = {
 DAG_ID = "cbr_dwh_to_gp_fct"
 
 
-# ===========================
-# SQL для измерений и факта в Greenplum
-# ===========================
-
 SQL_DIM_DATE = """
 SET search_path TO cbr_dwh, public;
 
 CREATE TABLE IF NOT EXISTS dim_date (
-    date_key     integer      NOT NULL,          -- YYYYMMDD
+    date_key     integer      NOT NULL,        
     full_date    date         NOT NULL,
     year         integer      NOT NULL,
     quarter      integer      NOT NULL,
     month        integer      NOT NULL,
     month_name   varchar(20),
     day          integer      NOT NULL,
-    day_of_week  integer      NOT NULL,         -- 1=понедельник ... 7=воскресенье
+    day_of_week  integer      NOT NULL,         
     day_name     varchar(20),
     is_weekend   boolean      NOT NULL,
     CONSTRAINT dim_date_pkey PRIMARY KEY (date_key)
@@ -155,17 +151,6 @@ with DAG(
 
     @task(task_id="load_stage_to_gp")
     def load_stage_to_gp():
-        """
-        1) Читаем данные из Postgres DWH (cbr_dwh.cbr_daily_rates_stage)
-        2) Очищаем стейдж-таблицу в Greenplum (cbr_dwh.cbr_daily_rates_fct)
-        3) Заливаем туда данные (как в staging в GP)
-
-        ВАЖНО: здесь приводим типы:
-        - rate_date: int (days since 1970-01-01) -> date
-        - load_dttm: str с Z / datetime -> datetime с tz
-        """
-
-        # 1. Подключение к Postgres DWH и чтение данных
         dwh = PostgresHook(postgres_conn_id="dwh_postgres")
         src_records = dwh.get_records(
             """
@@ -181,14 +166,11 @@ with DAG(
             """
         )
 
-        # Подключение к Greenplum
         gp = PostgresHook(postgres_conn_id="greenplum_gpdb")
 
-        # 2. Чистим стейдж в GP
         gp.run("TRUNCATE TABLE cbr_dwh.cbr_daily_rates_fct;")
 
         if not src_records:
-            # Нечего грузить — выходим
             return
 
         epoch = date(1970, 1, 1)
@@ -205,44 +187,37 @@ with DAG(
                 load_dttm_raw,
             ) = row
 
-            # --- rate_date: приводим к date ---
             if isinstance(rate_date_raw, (datetime, date)):
-                # если уже date / datetime
                 rate_date_val = (
                     rate_date_raw.date()
                     if isinstance(rate_date_raw, datetime)
                     else rate_date_raw
                 )
             else:
-                # ожидаем int = дни с 1970-01-01 (как делает Debezium для DATE)
                 rate_date_val = epoch + timedelta(days=int(rate_date_raw))
 
-            # --- load_dttm: к timestamptz (datetime) ---
             if isinstance(load_dttm_raw, str):
-                # строка вида '2025-11-23T14:33:38.198926Z'
                 load_dttm_val = datetime.fromisoformat(
                     load_dttm_raw.replace("Z", "+00:00")
                 )
             else:
-                load_dttm_val = load_dttm_raw  # уже datetime
+                load_dttm_val = load_dttm_raw
 
-            # Номинал и value — просто приводим к нормальным типам (на всякий случай)
             nominal_val = int(nominal) if nominal is not None else None
             value_val = float(value) if value is not None else None
 
             prepared_rows.append(
                 (
-                    rate_date_val,   # date
+                    rate_date_val,
                     char_code,
                     num_code,
                     nominal_val,
                     name,
                     value_val,
-                    load_dttm_val,  # datetime (timestamptz)
+                    load_dttm_val,
                 )
             )
 
-        # 3. Заливаем уже подготовленные строки в GP
         gp.insert_rows(
             table="cbr_dwh.cbr_daily_rates_fct",
             rows=prepared_rows,
@@ -276,8 +251,4 @@ with DAG(
         sql=SQL_FACT_RATES,
     )
 
-    # Оркестрация:
-    # 1) сначала стейдж в GP
-    # 2) на его основе измерения
-    # 3) затем факт
     load_stage_to_gp() >> [dim_date_task, dim_currency_task] >> fact_rates_task

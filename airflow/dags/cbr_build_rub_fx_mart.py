@@ -99,6 +99,6 @@ with DAG(
 
     build_rub_fx_mart = PostgresOperator(
         task_id="build_rub_fx_mart",
-        postgres_conn_id="greenplum_gpdb",  # коннект к Greenplum
+        postgres_conn_id="greenplum_gpdb",
         sql=SQL_BUILD_RUB_FX_MART,
     )
