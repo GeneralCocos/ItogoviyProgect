@@ -34,3 +34,4 @@ RUN set -e \
  && rm -rf /tmp/*
 
 USER 1001
+
