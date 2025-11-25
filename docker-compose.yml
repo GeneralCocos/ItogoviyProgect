@@ -88,6 +88,11 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    healthcheck:
+      test: [ "CMD", "bash", "-lc", "echo srvr | nc localhost 2181 | grep Mode" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - zookeeper_data:/var/lib/zookeeper/data
     networks:
@@ -97,7 +102,8 @@ services:
     image: confluentinc/cp-kafka:7.6.1
     container_name: kafka
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9092:9092"
     environment:
@@ -202,6 +208,7 @@ services:
   greenplum:
     image: pro100filipp/greenplum-with-pxf
     container_name: greenplum
+    hostname: greenplum
     environment:
       GP_DB: gpdb
       GP_USER: gpadmin
